@@ -1,46 +1,46 @@
 """
-工具函数，包含 embedding 相关功能。
+Utility helpers for embeddings.
 """
 
 import logging
 from typing import List, Tuple
 
-# 全局变量：用于缓存 embedding 模型
+# Global cache for the embedding model
 _embedding_model = None
 
 
 def _get_embedding_model():
     """
-    获取或初始化 embedding 模型（使用单例模式，避免重复加载）。
-    
+    Get or initialize the embedding model (singleton).
+
     Returns:
-        sentence_transformers 模型实例
+        sentence_transformers model instance
     """
     global _embedding_model
     if _embedding_model is None:
         try:
             from sentence_transformers import SentenceTransformer
-            logging.info("正在加载 embedding 模型: sentence-transformers/all-mpnet-base-v2")
+            logging.info("Loading embedding model: sentence-transformers/all-mpnet-base-v2")
             _embedding_model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-            logging.info("Embedding 模型加载完成")
+            logging.info("Embedding model loaded")
         except ImportError:
             raise ImportError(
-                "需要安装 sentence-transformers 库。请运行: pip install sentence-transformers"
+                "Missing dependency: sentence-transformers. Install with: pip install sentence-transformers"
             )
         except Exception as e:
-            raise RuntimeError(f"加载 embedding 模型失败: {e}")
+            raise RuntimeError(f"Failed to load embedding model: {e}")
     return _embedding_model
 
 
 def get_text_embedding(text: str) -> List[float]:
     """
-    获取文本的 embedding。
-    
+    Compute an embedding for the input text.
+
     Args:
-        text: 输入文本
-        
+        text: Input text
+
     Returns:
-        embedding 向量（列表）
+        Embedding vector as a list
     """
     if not text:
         return []
@@ -50,7 +50,7 @@ def get_text_embedding(text: str) -> List[float]:
         embedding = model.encode(text, convert_to_numpy=True, normalize_embeddings=True)
         return embedding.tolist()
     except Exception as e:
-        logging.error(f"计算 embedding 时出错: {e}")
+        logging.error(f"Embedding computation failed: {e}")
         return []
 
 
@@ -61,52 +61,55 @@ def find_top_similar_texts(
     top_k: int = 10
 ) -> List[Tuple[int, float]]:
     """
-    在cache中找到与query_text最相似的top-k个文本。
-    
-    使用 embedding 相似度进行检索，批量计算以提高效率。
-    
+    Find top-k most similar cached texts to the query text.
+
+    Similarity uses normalized embedding dot product.
+
     Args:
-        query_text: 查询文本
-        cache_texts: cache中的文本列表
-        cache_embeddings: cache中对应的embedding列表
-        top_k: 返回top-k个最相似的文本
-    
+        query_text: Query text
+        cache_texts: Cached texts
+        cache_embeddings: Cached embeddings
+        top_k: Number of results
+
     Returns:
-        List of (index, similarity_score) tuples，按相似度降序排列
+        List of (index, similarity_score) sorted by similarity desc
     """
     if not query_text or not cache_texts or not cache_embeddings:
         return []
     
     if len(cache_texts) != len(cache_embeddings):
-        logging.warning(f"cache_texts 和 cache_embeddings 长度不匹配: {len(cache_texts)} vs {len(cache_embeddings)}")
+        logging.warning(
+            "cache_texts and cache_embeddings length mismatch: %s vs %s",
+            len(cache_texts),
+            len(cache_embeddings),
+        )
         return []
     
     try:
         import numpy as np
         model = _get_embedding_model()
         
-        # 获取查询文本的 embedding
+        # Encode query text
         query_embedding = model.encode(query_text, convert_to_numpy=True, normalize_embeddings=True)
         
-        # 将 cache_embeddings 转换为 numpy 数组
+        # Convert cached embeddings
         cache_embeddings_array = np.array(cache_embeddings)
         
-        # 批量计算相似度（dot product，因为 embeddings 已归一化）
+        # Batch similarity via dot product (embeddings are normalized)
         similarities = query_embedding.dot(cache_embeddings_array.T)
         
-        # 归一化到 0-1 范围（dot product 的范围通常是 -1 到 1）
+        # Normalize to [0, 1]
         similarities = (similarities + 1.0) / 2.0
         similarities = np.clip(similarities, 0.0, 1.0)
         
-        # 获取 top-k 索引
+        # Get top-k indices
         top_indices = np.argsort(similarities)[::-1][:top_k]
         
-        # 构建结果列表
+        # Build result list
         results = [(int(idx), float(similarities[idx])) for idx in top_indices]
         
         return results
         
     except Exception as e:
-        logging.error(f"使用 embedding 检索相似文本时出错: {e}")
+        logging.error(f"Embedding-based retrieval failed: {e}")
         return []
-

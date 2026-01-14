@@ -1,5 +1,5 @@
 """
-基于 LLM 的多标签分类器。
+LLM-based multi-label classifier.
 """
 
 import json
@@ -11,7 +11,7 @@ try:
     from openai import OpenAI
 except ImportError:
     raise ImportError(
-        "需要安装 openai 库。请运行: pip install openai"
+        "Missing dependency: openai. Install with: pip install openai"
     )
 
 from l3r_confidence import (
@@ -22,16 +22,16 @@ from l3r_confidence import (
 
 
 def _try_fix_json(content: str) -> str:
-    """尝试修复常见的 JSON 格式问题。"""
+    """Try to fix common JSON formatting issues."""
     original = content
     
-    # 移除可能的 markdown 代码块标记
+    # Strip markdown code fences
     import re
     content = re.sub(r'^```(?:json)?\s*\n', '', content, flags=re.MULTILINE)
     content = re.sub(r'\n```\s*$', '', content, flags=re.MULTILINE)
     content = content.strip()
     
-    # 尝试提取 JSON 对象（如果响应中包含额外的文本）
+    # Try to extract a JSON object from extra text
     first_brace = content.find('{')
     if first_brace != -1:
         content = content[first_brace:]
@@ -40,7 +40,7 @@ def _try_fix_json(content: str) -> str:
 
 
 def _parse_json_with_retry(content: str, max_retries: int = 3) -> Dict:
-    """解析 JSON，如果失败则尝试修复后重试。"""
+    """Parse JSON with optional fix-and-retry."""
     last_error = None
     
     for attempt in range(max_retries):
@@ -53,16 +53,20 @@ def _parse_json_with_retry(content: str, max_retries: int = 3) -> Dict:
                 content = _try_fix_json(content)
                 if content == original_content:
                     break
-                logging.warning(f"JSON 解析失败（尝试 {attempt + 1}/{max_retries}），尝试修复...")
+                logging.warning(
+                    "JSON parsing failed (attempt %s/%s). Trying to fix.",
+                    attempt + 1,
+                    max_retries,
+                )
             else:
                 break
     
-    logging.error(f"无法解析 JSON: {content[:500]}")
-    raise last_error or json.JSONDecodeError("无法解析 JSON", content, 0)
+    logging.error("Failed to parse JSON: %s", content[:500])
+    raise last_error or json.JSONDecodeError("Failed to parse JSON", content, 0)
 
 
 class LLMClassifier:
-    """使用大语言模型进行多标签分类的分类器。"""
+    """Multi-label classifier powered by an LLM."""
     
     def __init__(
         self,
@@ -75,14 +79,14 @@ class LLMClassifier:
         l3r_alpha: float = 1.0,
     ) -> None:
         """
-        初始化分类器。
-        
+        Initialize the classifier.
+
         Args:
-            model_name: 模型名称
-            base_url: API 服务的基础 URL（None 表示使用 OpenAI 默认地址）
-            api_key: API 密钥
-            system_prompt: 系统提示词
-            request_interval: 每次 API 调用之间的等待时间（秒）
+            model_name: Model name
+            base_url: API base URL (None uses OpenAI default)
+            api_key: API key
+            system_prompt: System prompt
+            request_interval: Seconds to wait between API calls
         """
         self.model_name = model_name
         self.base_url = base_url
@@ -92,9 +96,9 @@ class LLMClassifier:
         self.l3r_eps = l3r_eps
         self.l3r_alpha = l3r_alpha
         
-        # 初始化 OpenAI 客户端
+        # Initialize OpenAI client
         if not api_key:
-            raise RuntimeError("缺少 API Key。")
+            raise RuntimeError("Missing API key.")
         self._client = OpenAI(api_key=api_key, base_url=base_url)
 
     def predict(
@@ -105,70 +109,70 @@ class LLMClassifier:
         return_logprobs: bool = False,
     ) -> Dict:
         """
-        对给定提示词进行分类预测。
-        
+        Run a classification prediction for the prompt.
+
         Args:
-            prompt: 分类提示词
-            label_space: 标签空间（所有可能的标签列表）
-            max_retries: API 调用失败时的最大重试次数
-            return_logprobs: 是否返回 logprobs 和置信度
-        
+            prompt: Classification prompt
+            label_space: Full label space
+            max_retries: Max retries on API failure
+            return_logprobs: Whether to return logprobs/confidences
+
         Returns:
-            如果 return_logprobs=False，返回预测的标签列表
-            如果 return_logprobs=True，返回包含 "labels" 和 "confidences" 的字典
+            If return_logprobs=False, returns list of labels
+            If return_logprobs=True, returns dict with "labels" and "confidences"
         """
         last_error = None
         
-        # 重试机制
+        # Retry loop
         for attempt in range(max_retries + 1):
             try:
-                # 在调用 API 之前等待指定时间（用于限流）
+                # Optional delay before API call
                 if self.request_interval > 0:
                     time.sleep(self.request_interval)
                 
-                # 调用 API 进行预测
+                # Call API
                 create_kwargs = {
                     "model": self.model_name,
                     "messages": [
                         {"role": "system", "content": self.system_prompt},
                         {"role": "user", "content": prompt},
                     ],
-                    "temperature": 0,  # 温度设为 0 以获得确定性输出
-                    "response_format": {"type": "json_object"},  # 强制 JSON 格式
+                    "temperature": 0,  # Deterministic outputs
+                    "response_format": {"type": "json_object"},  # Force JSON format
                 }
                 
-                # 如果需要返回logprobs，添加logprobs参数
+                # Add logprobs if requested
                 if return_logprobs:
                     create_kwargs["logprobs"] = True
                     try:
-                        create_kwargs["top_logprobs"] = 5  # 返回 top-5 的 logprobs
+                        create_kwargs["top_logprobs"] = 5  # top-5 logprobs
                     except Exception:
                         pass
                 
                 response = self._client.chat.completions.create(**create_kwargs)
                 content = response.choices[0].message.content
                 
-                # 解析 JSON
+                # Parse JSON
                 result = _parse_json_with_retry(content, max_retries=3)
                 
-                # 提取标签列表
+                # Extract labels
                 labels = result.get("labels", [])
                 
-                # 验证标签是否在标签空间中
+                # Filter labels to the known label space
                 valid_labels = [label for label in labels if label in label_space]
                 
                 if not valid_labels:
-                    logging.warning(f"预测结果中没有有效的标签。原始输出: {labels}")
+                    logging.warning("No valid labels in output. Raw: %s", labels)
                 
-                # 如果不需要 logprobs，直接返回标签列表（保持向后兼容）
+                # Return labels only if logprobs not requested
                 if not return_logprobs:
                     return valid_labels
                 
-                # 如果需要 logprobs，计算置信度
+                # Compute confidences from logprobs
                 result_dict = {"labels": valid_labels}
                 
                 if return_logprobs:
-                    # 提取 logprobs
+                    # Extract logprobs
                     logprobs_obj = getattr(response.choices[0], 'logprobs', None)
                     if logprobs_obj:
                         token_logprobs = self._extract_token_logprobs(logprobs_obj)
@@ -177,7 +181,7 @@ class LLMClassifier:
                         )
                         result_dict["confidences"] = confidences
                     else:
-                        logging.warning("API 响应中没有 logprobs 信息")
+                        logging.warning("API response has no logprobs")
                         result_dict["confidences"] = {}
                 
                 return result_dict
@@ -185,37 +189,46 @@ class LLMClassifier:
             except json.JSONDecodeError as e:
                 last_error = e
                 if attempt < max_retries:
-                    logging.warning(f"JSON 解析失败（尝试 {attempt + 1}/{max_retries + 1}），将重试...")
+                    logging.warning(
+                        "JSON parsing failed (attempt %s/%s). Retrying...",
+                        attempt + 1,
+                        max_retries + 1,
+                    )
                     time.sleep(1.0)
                 else:
-                    logging.error(f"JSON 解析失败，已达到最大重试次数。")
+                    logging.error("JSON parsing failed after max retries.")
                     if return_logprobs:
                         return {"labels": [], "confidences": {}}
                     return []
             except Exception as e:
                 last_error = e
                 if attempt < max_retries:
-                    logging.warning(f"API 调用失败（尝试 {attempt + 1}/{max_retries + 1}）: {e}，将重试...")
+                    logging.warning(
+                        "API call failed (attempt %s/%s): %s. Retrying...",
+                        attempt + 1,
+                        max_retries + 1,
+                        e,
+                    )
                     time.sleep(1.0)
                 else:
                     raise
         
-        # 不应该到达这里
-        raise RuntimeError(f"分类失败: {last_error}")
+        # Should not reach here
+        raise RuntimeError(f"Classification failed: {last_error}")
     
     def _extract_token_logprobs(self, logprobs_obj) -> List[Dict]:
         """
-        从API响应中提取token logprobs信息。
-        
+        Extract per-token logprobs from the API response.
+
         Args:
-            logprobs_obj: API返回的logprobs对象
-            
+            logprobs_obj: API logprobs object
+
         Returns:
             List of per-step token logprob data with optional top_logprobs
         """
         token_logprobs: List[Dict] = []
         
-        # 尝试不同的方式提取 logprobs
+        # Handle different logprobs formats
         if hasattr(logprobs_obj, 'content') and logprobs_obj.content:
             for token_info in logprobs_obj.content:
                 token = token_info.token if hasattr(token_info, "token") else None
@@ -265,16 +278,16 @@ class LLMClassifier:
         label_space: Sequence[str],
     ) -> Dict[str, float]:
         """
-        基于 L3R 计算每个标签的置信度。
-        
+        Compute per-label confidence using L3R.
+
         Args:
-            labels: 预测的标签列表
-            content: API返回的原始内容
-            token_logprobs: 每步 token 的 logprob 与 top_logprobs
-            label_space: 标签空间
-        
+            labels: Predicted labels
+            content: Raw API content
+            token_logprobs: Per-step token logprobs with top_logprobs
+            label_space: Full label space
+
         Returns:
-            标签到置信度的字典
+            Dict mapping label -> confidence
         """
         if not token_logprobs or not labels:
             return {}

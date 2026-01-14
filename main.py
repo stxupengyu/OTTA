@@ -1,8 +1,8 @@
 """
-基于 LLM 的多标签分类评估主程序。
+Main entry for LLM-based multi-label evaluation.
 
-该脚本使用大语言模型（LLM）对测试集进行多标签分类预测，
-并计算 micro-f1, macro-f1, example-f1 等评估指标。
+This script runs multi-label classification on a test set and computes
+micro-f1, macro-f1, and example-f1.
 """
 
 import json
@@ -67,71 +67,71 @@ def _safe_cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
 
 def set_logging(output_dir: str) -> None:
     """
-    设置日志记录，同时输出到控制台和文件。
-    
+    Configure logging to both console and file.
+
     Args:
-        output_dir: 输出目录，日志文件将保存在此目录下的 log.txt
+        output_dir: Output directory; log file is saved as log.txt
     """
-    # 创建输出目录
+    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
     
-    # 日志文件路径
+    # Log file path
     log_file = os.path.join(output_dir, "log.txt")
     
-    # 配置日志格式
+    # Log formatting
     log_format = "%(asctime)s - %(message)s"
     date_format = "%Y-%m-%d %H:%M:%S"
     
-    # 创建处理器：控制台和文件（追加模式）
+    # Handlers: console and file (append mode)
     handlers = [
-        logging.StreamHandler(),  # 控制台输出
-        logging.FileHandler(log_file, mode='a', encoding='utf-8')  # 文件输出（追加模式）
+        logging.StreamHandler(),  # Console
+        logging.FileHandler(log_file, mode='a', encoding='utf-8')  # File (append)
     ]
     
-    # 配置日志
+    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format=log_format,
         datefmt=date_format,
         handlers=handlers,
-        force=True  # 强制重新配置，避免多次调用时的冲突
+        force=True  # Reconfigure to avoid duplicate handlers
     )
 
 
 def main() -> None:
     """
-    主函数：执行批量推理和评估流程。
-    
-    流程：
-    1. 加载标签描述和测试数据
-    2. 初始化分类器
-    3. 对每个样本进行预测（支持限制样本数量）
-    4. 计算评估指标（在第10个样本时，之后每100个样本输出一次）
-    5. 保存预测结果和指标
+    Main flow for batch inference and evaluation.
+
+    Steps:
+    1. Load label descriptions and test data
+    2. Initialize classifier
+    3. Predict for each sample (optionally limit samples)
+    4. Compute metrics (after 10 samples, then every 100)
+    5. Save predictions and metrics
     """
     args = parse_args()
     set_logging(output_dir=args.output_dir)
     
     logging.info("=" * 40)
-    logging.info("开始批量评估多标签分类任务")
+    logging.info("Starting batch evaluation for multi-label classification")
     logging.info("=" * 40)
-    logging.info(f"数据集: {args.dataset}")
+    logging.info(f"Dataset: {args.dataset}")
     
-    # 1. 加载标签描述
-    logging.info(f"加载标签描述: {args.tag_desc}")
+    # 1. Load label descriptions
+    logging.info(f"Loading label descriptions: {args.tag_desc}")
     label_desc = load_tag_descriptions(args.tag_desc)
     label_space = list(label_desc.keys())
     if not label_space:
-        raise RuntimeError(f"标签集合为空，请检查 {args.tag_desc}")
-    logging.info(f"标签数量: {len(label_space)}")
+        raise RuntimeError(f"Empty label set. Check: {args.tag_desc}")
+    logging.info(f"Label count: {len(label_space)}")
     
-    # 2. 加载测试数据
-    logging.info(f"加载测试数据: {args.test_file}")
+    # 2. Load test data
+    logging.info(f"Loading test data: {args.test_file}")
     examples = load_test_file(args.test_file)
     if not examples:
-        raise RuntimeError(f"未能从 {args.test_file} 解析到样本。")
+        raise RuntimeError(f"No samples parsed from {args.test_file}.")
     
-    # 基本一致性检查：gold labels 是否在 label_space 中
+    # Basic consistency check: gold labels in label_space
     label_set = set(label_space)
     gold_total = 0
     gold_in_space = 0
@@ -144,23 +144,24 @@ def main() -> None:
         coverage = gold_in_space / gold_total
         if coverage < 0.8:
             logging.warning(
-                f"[一致性检查] gold labels 覆盖率过低: {coverage:.2%}。"
-                f"可能是数据集文件不匹配，或标签存在大小写/空格差异。"
+                "[Consistency check] Low gold label coverage: %.2f%%. "
+                "Possible dataset mismatch or label casing/spacing issues.",
+                coverage * 100,
             )
     
-    # 限制测试样本数量（如果指定）
+    # Limit test samples if requested
     total_samples = len(examples)
     if args.max_samples is not None and args.max_samples > 0:
         examples = examples[:args.max_samples]
-        logging.info(f"限制测试样本数量: {len(examples)}/{total_samples}")
+        logging.info("Limiting test samples: %s/%s", len(examples), total_samples)
     else:
-        logging.info(f"测试样本总数: {total_samples}")
+        logging.info("Total test samples: %s", total_samples)
     
-    # 3. 初始化分类器
-    logging.info(f"模式: {args.mode}")
-    logging.info(f"模型类型: {args.model_type}")
-    logging.info(f"模型名称: {args.model_name}")
-    logging.info(f"Base URL: {args.base_url or 'OpenAI默认'}")
+    # 3. Initialize classifier
+    logging.info(f"Mode: {args.mode}")
+    logging.info(f"Model type: {args.model_type}")
+    logging.info(f"Model name: {args.model_name}")
+    logging.info(f"Base URL: {args.base_url or 'OpenAI default'}")
     
     classifier = LLMClassifier(
         model_name=args.model_name,
@@ -171,9 +172,9 @@ def main() -> None:
         l3r_eps=args.l3r_eps,
         l3r_alpha=args.l3r_alpha,
     )
-    logging.info("使用 LLM 分类器")
+    logging.info("Using LLM classifier")
     
-    # RAG 模式相关配置
+    # RAG configuration
     rag_mode = (args.mode == "rag")
     rag_cache_size = 100
     rag_warmup = 200
@@ -196,17 +197,21 @@ def main() -> None:
         _memory_bank = NaiveMemoryBank(B=rag_cache_size, k=10)
     
     if rag_mode:
-        logging.info(f"[RAG模式] 已启用，cache大小: {rag_cache_size}，warmup: {rag_warmup}")
-        logging.info(f"[MemoryBank] 类型: {args.bank_type}, size: {len(_memory_bank.S)}")
+        logging.info(
+            "[RAG] enabled, cache size: %s, warmup: %s",
+            rag_cache_size,
+            rag_warmup,
+        )
+        logging.info("[MemoryBank] type: %s, size: %s", args.bank_type, len(_memory_bank.S))
     
-    # 4. 对每个样本进行预测
-    logging.info("开始预测...")
+    # 4. Predict each sample
+    logging.info("Running predictions...")
     predictions: List[List[str]] = []
     gold_labels: List[List[str]] = []
     did_l3r_validate = False
     
     for i, example in enumerate(examples, 1):
-        # RAG模式：在warmup之后，使用RAG检索相似样本
+        # RAG mode: after warmup, retrieve similar samples
         rag_examples = None
         use_rag_for_prediction = False
         if rag_mode and i > rag_warmup and len(_memory_bank.S) > 0:
@@ -223,13 +228,17 @@ def main() -> None:
                 ]
                 use_rag_for_prediction = True
                 logging.info(
-                    f"[RAG] 样本 #{example.idx}: 检索到 {len(rag_examples)} 个相似样本用于RAG "
-                    f"(bank={args.bank_type}, size={len(_memory_bank.S)})"
+                    "[RAG] sample #%s: retrieved %s similar examples "
+                    "(bank=%s, size=%s)",
+                    example.idx,
+                    len(rag_examples),
+                    args.bank_type,
+                    len(_memory_bank.S),
                 )
         
-        # RAG模式且warmup之后：进行两次预测
+        # RAG mode after warmup: run two predictions
         if rag_mode and use_rag_for_prediction:
-            # 使用包含示例的 prompt（RAG），用于评价指标与置信度计算（同一次调用）
+            # Prompt with RAG examples (for metrics and confidence)
             prompt_with_rag = build_llm_prompt(
                 text=example.text,
                 label_to_desc=label_desc,
@@ -239,10 +248,10 @@ def main() -> None:
             prediction_result_rag = classifier.predict(
                 prompt=prompt_with_rag,
                 label_space=label_space,
-                return_logprobs=True,  # 需要logprob来计算置信度
+                return_logprobs=True,  # logprobs needed for confidence
             )
             
-            # 处理预测结果（用于评价指标与置信度）
+            # Handle prediction result (metrics + confidence)
             if isinstance(prediction_result_rag, dict):
                 predicted_labels = prediction_result_rag.get("labels", [])
                 confidences = prediction_result_rag.get("confidences", {})
@@ -252,9 +261,16 @@ def main() -> None:
             
             predictions.append(predicted_labels)
             gold_labels.append(example.labels)
-            logging.info(f"[RAG] [{i}/{len(examples)}] 样本 #{example.idx}: 预测 {len(predicted_labels)} 个标签: {predicted_labels[:5]}")
+            logging.info(
+                "[RAG] [%s/%s] sample #%s: predicted %s labels: %s",
+                i,
+                len(examples),
+                example.idx,
+                len(predicted_labels),
+                predicted_labels[:5],
+            )
             
-            # 计算样本置信度：取预测的k个标签的置信度均值
+            # Compute sample confidence as mean of predicted label confidences
             if confidences and predicted_labels:
                 label_confidences = [confidences.get(label, 0.0) for label in predicted_labels]
                 sample_confidence = aggregate_instance_confidence(
@@ -264,7 +280,10 @@ def main() -> None:
                 )
             else:
                 sample_confidence = 0.0
-                logging.warning(f"样本 #{example.idx}: 无法获取置信度，使用默认值 0.0")
+                logging.warning(
+                    "sample #%s: confidence unavailable, using 0.0",
+                    example.idx,
+                )
 
             if args.l3r_validate and not did_l3r_validate:
                 logging.info(format_l3r_validation(confidences, sample_confidence))
@@ -285,14 +304,18 @@ def main() -> None:
                 did_update = bool(update_result) if update_result is not None else (after_len > before_len)
 
             logging.info(
-                f"[RAG] MemoryBank 更新: 样本 #{example.idx}, "
-                f"updated={did_update}, conf={sample_confidence:.3f}, "
-                f"tau={tau:.3f}, size={len(_memory_bank.S)}"
+                "[RAG] MemoryBank update: sample #%s, updated=%s, conf=%.3f, "
+                "tau=%.3f, size=%s",
+                example.idx,
+                did_update,
+                sample_confidence,
+                tau,
+                len(_memory_bank.S),
             )
         
         else:
-            # 基础模式或warmup之前：只进行一次预测
-            # 构建提示词
+            # Base mode or before warmup: single prediction
+            # Build prompt
             prompt = build_llm_prompt(
                 text=example.text,
                 label_to_desc=label_desc,
@@ -300,8 +323,8 @@ def main() -> None:
                 rag_examples=None,
             )
             
-            # 进行预测
-            # RAG模式下需要获取logprob和置信度（warmup之前）
+            # Predict
+            # In RAG mode we still need logprobs before warmup
             return_logprobs = rag_mode
             prediction_result = classifier.predict(
                 prompt=prompt,
@@ -309,23 +332,30 @@ def main() -> None:
                 return_logprobs=return_logprobs,
             )
             
-            # 处理预测结果
+            # Handle prediction results
             if isinstance(prediction_result, dict):
                 predicted_labels = prediction_result.get("labels", [])
                 confidences = prediction_result.get("confidences", {})
             else:
-                # 向后兼容：如果不是字典，直接使用列表
+                # Backward compatibility: list output
                 predicted_labels = prediction_result
                 confidences = {}
             
             predictions.append(predicted_labels)
             gold_labels.append(example.labels)
             
-            logging.info(f"[{i}/{len(examples)}] 样本 #{example.idx}: 预测 {len(predicted_labels)} 个标签: {predicted_labels[:5]}")
+            logging.info(
+                "[%s/%s] sample #%s: predicted %s labels: %s",
+                i,
+                len(examples),
+                example.idx,
+                len(predicted_labels),
+                predicted_labels[:5],
+            )
             
-            # RAG模式：计算样本置信度并更新缓存（warmup之前）
+            # RAG mode: compute confidence and update cache (before warmup)
             if rag_mode:
-                # 计算样本置信度：取预测的k个标签的置信度均值
+                # Compute confidence as mean of predicted label confidences
                 if confidences and predicted_labels:
                     label_confidences = [confidences.get(label, 0.0) for label in predicted_labels]
                     sample_confidence = aggregate_instance_confidence(
@@ -335,7 +365,10 @@ def main() -> None:
                     )
                 else:
                     sample_confidence = 0.0
-                    logging.warning(f"样本 #{example.idx}: 无法获取置信度，使用默认值 0.0")
+                    logging.warning(
+                        "sample #%s: confidence unavailable, using 0.0",
+                        example.idx,
+                    )
 
                 if args.l3r_validate and not did_l3r_validate:
                     logging.info(format_l3r_validation(confidences, sample_confidence))
@@ -356,51 +389,55 @@ def main() -> None:
                     did_update = bool(update_result) if update_result is not None else (after_len > before_len)
 
                 logging.info(
-                    f"[RAG] MemoryBank 更新: 样本 #{example.idx}, "
-                    f"updated={did_update}, conf={sample_confidence:.3f}, "
-                    f"tau={tau:.3f}, size={len(_memory_bank.S)}"
+                    "[RAG] MemoryBank update: sample #%s, updated=%s, conf=%.3f, "
+                    "tau=%.3f, size=%s",
+                    example.idx,
+                    did_update,
+                    sample_confidence,
+                    tau,
+                    len(_memory_bank.S),
                 )
         
-        # 在第10个样本时输出指标
+        # Report metrics after 10 samples
         if i == 10:
             current_metrics = compute_metrics(
                 predictions=predictions,
                 gold_labels=gold_labels,
                 all_labels=label_space,
             )
-            logging.info(f"[实时指标] 已处理 {i}/{len(examples)} 个样本:")
+            logging.info("[Metrics] processed %s/%s samples:", i, len(examples))
             for key, value in current_metrics.items():
-                logging.info(f"  {key}: {value:.2f}%")
+                logging.info("  %s: %.2f%%", key, value)
         
-        # 每100个样本输出一次指标（跳过第10个，因为已经输出过了）
+        # Report metrics every 100 samples after the first 10
         elif i > 10 and i % 100 == 0:
             current_metrics = compute_metrics(
                 predictions=predictions,
                 gold_labels=gold_labels,
                 all_labels=label_space,
             )
-            logging.info(f"[实时指标] 已处理 {i}/{len(examples)} 个样本:")
+            logging.info("[Metrics] processed %s/%s samples:", i, len(examples))
             for key, value in current_metrics.items():
-                logging.info(f"  {key}: {value:.2f}%")
+                logging.info("  %s: %.2f%%", key, value)
     
-    # 5. 计算最终评估指标
-    logging.info("计算最终评估指标...")
+    # 5. Final metrics
+    logging.info("Computing final metrics...")
     final_metrics = compute_metrics(
         predictions=predictions,
         gold_labels=gold_labels,
         all_labels=label_space,
     )
     
-    # 6. 保存评估指标
+    # 6. Save metrics
     os.makedirs(args.output_dir, exist_ok=True)
     metrics_output = os.path.join(args.output_dir, "metrics.json")
-    logging.info(f"保存评估指标: {metrics_output}")
+    logging.info("Saving metrics: %s", metrics_output)
     with open(metrics_output, "w", encoding="utf-8") as f:
         json.dump(final_metrics, f, ensure_ascii=False, indent=2)
     
-    # 7. 保存预测结果
+    # 7. Save predictions
     pred_output = os.path.join(args.output_dir, "predictions.csv")
-    logging.info(f"保存预测结果: {pred_output}")
+    logging.info("Saving predictions: %s", pred_output)
     import csv
     with open(pred_output, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["id", "text", "gold_labels", "predicted_labels"])
@@ -414,7 +451,7 @@ def main() -> None:
             })
     
     logging.info("=" * 40)
-    logging.info("评估结果:")
+    logging.info("Final metrics:")
     logging.info(json.dumps(final_metrics, ensure_ascii=False, indent=2))
     logging.info("=" * 40)
 

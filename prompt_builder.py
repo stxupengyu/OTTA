@@ -1,5 +1,5 @@
 """
-LLM 提示词构建相关函数。
+LLM prompt builder.
 """
 
 import json
@@ -13,36 +13,36 @@ def build_llm_prompt(
     rag_examples: Optional[List[Dict]] = None,
 ) -> str:
     """
-    构建发送给 LLM 的多标签分类提示词。
-    
+    Build a multi-label classification prompt for the LLM.
+
     Args:
-        text: 待分类的文本
-        label_to_desc: 标签到描述的映射字典
-        use_label_desc: 是否使用标签描述
-        rag_examples: 可选的 RAG 示例列表，每个示例包含 "text" 和 "prediction"（包含 labels）
-        
+        text: Input text to classify
+        label_to_desc: Label -> description mapping
+        use_label_desc: Whether to include label descriptions
+        rag_examples: Optional RAG examples, each with "text" and "prediction" (labels)
+
     Returns:
-        完整的提示词字符串
+        Prompt string
     """
-    # 格式化标签/标签描述列表
+    # Format label list
     desc_lines = []
     for label, desc in label_to_desc.items():
         if use_label_desc:
-            # 将描述中的多个空白字符压缩为单个空格
+            # Collapse whitespace
             short_desc = " ".join(desc.split())
             desc_lines.append(f"- {label}: {short_desc}")
         else:
-            # 只使用标签名称，不使用描述
+            # Use label name only
             desc_lines.append(f"- {label}")
     
     labels_str = "\n".join(desc_lines)
     
-    # JSON 输出格式示例
+    # JSON output example
     example_output = {
-        "labels": list(label_to_desc.keys())[:3]  # 示例：取前3个标签
+        "labels": list(label_to_desc.keys())[:3]  # Example: first 3 labels
     }
     
-    # 构建 RAG 示例部分（如果提供）
+    # Build RAG example section
     rag_section = ""
     if rag_examples and len(rag_examples) > 0:
         rag_examples_str = []
@@ -51,33 +51,32 @@ def build_llm_prompt(
             rag_pred = rag_ex.get("prediction", {})
             rag_labels = rag_pred.get("labels", []) if isinstance(rag_pred, dict) else []
             rag_examples_str.append(
-                f"示例 {i}:\n"
-                f"文本: {rag_text}\n"
-                f"预测标签: {', '.join(rag_labels)}"
+                f"Example {i}:\n"
+                f"Text: {rag_text}\n"
+                f"Predicted labels: {', '.join(rag_labels)}"
             )
         rag_section = f"""
 
-参考示例（这些是之前高置信度的预测结果，可作为参考）：
+Reference examples (previous high-confidence predictions):
 {chr(10).join(rag_examples_str)}
 
 """
     
     prompt = f"""
-你是一个多标签分类器。请从下列标签集合中选择所有适用的标签，并输出 JSON 格式：
+You are a multi-label classifier. Select all applicable labels from the list and output JSON:
 
 {labels_str}
 {rag_section}
-输出要求：
-1. 只输出 JSON 格式，不要输出其他内容。
-2. JSON 必须包含 "labels" 字段（字符串数组）。
-3. 选择所有你认为适用的标签，数量不限。
-4. 不要输出 "confidences" 字段。
+Output requirements:
+1. Output JSON only, no extra text.
+2. JSON must include a "labels" field (string array).
+3. Select all labels you consider applicable.
+4. Do not output a "confidences" field.
 
-输出格式示例：
+Example output:
 {json.dumps(example_output, ensure_ascii=False, indent=2)}
 
-待分类文本：
+Text to classify:
 {text}
 """
     return prompt.strip()
-
