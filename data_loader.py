@@ -1,5 +1,5 @@
 """
-Data loading helpers.
+Data loading utilities.
 """
 
 import csv
@@ -10,13 +10,13 @@ from models import Example
 
 def load_tag_descriptions(path: str) -> Dict[str, str]:
     """
-    Load label descriptions from a CSV file.
+    Load labels and descriptions from a CSV file.
 
     Args:
         path: CSV file path with "tags" and "outputs" columns
 
     Returns:
-        Dict mapping tag -> description
+        Mapping from label to description
     """
     label_to_desc: Dict[str, str] = {}
     with open(path, "r", encoding="utf-8", newline="") as f:
@@ -33,29 +33,29 @@ def load_tag_descriptions(path: str) -> Dict[str, str]:
 
 def load_test_file(path: str) -> List[Example]:
     """
-    Load test samples from a file.
+    Load test samples from a text file.
 
-    File format:
+    Format:
         Text: <text>
         Labels: <label1>,<label2>,...
-        (empty lines separate samples)
+        (blank line separates samples)
 
     Args:
         path: Test file path
 
     Returns:
-        List of Example objects
+        List of examples with index, text, and labels
     """
     examples: List[Example] = []
     current_text = None  # Current text being read
-    idx = 0  # Example counter
+    idx = 0  # Sample counter
 
     def flush(labels_line: str) -> None:
-        """Create an example from current text + labels."""
+        """Flush the current text and labels into an Example."""
         nonlocal idx, current_text
         if current_text is None:
             return
-        # Parse comma-separated labels
+        # Parse labels (comma-separated)
         labels = [lab.strip() for lab in labels_line.split(",") if lab.strip()]
         idx += 1
         examples.append(Example(idx=idx, text=current_text.strip(), labels=labels))
@@ -66,10 +66,10 @@ def load_test_file(path: str) -> List[Example]:
             line = line.strip()
             if not line:
                 continue
-            # Parse "Text:" line
+            # Parse "Text:" lines
             if line.startswith("Text:"):
                 current_text = line[len("Text:"):].strip()
-            # Parse "Labels:" line and flush the sample
+            # Parse "Labels:" lines and finalize the sample
             elif line.startswith("Labels:"):
                 flush(line[len("Labels:"):].strip())
 

@@ -1,5 +1,5 @@
 """
-LLM prompt builder.
+Prompt construction helpers for the LLM.
 """
 
 import json
@@ -11,38 +11,49 @@ def build_llm_prompt(
     label_to_desc: Dict[str, str],
     use_label_desc: bool = True,
     rag_examples: Optional[List[Dict]] = None,
+    dataset_desc: Optional[str] = None,
 ) -> str:
     """
-    Build a multi-label classification prompt for the LLM.
+    Build the multi-label classification prompt.
 
     Args:
-        text: Input text to classify
-        label_to_desc: Label -> description mapping
+        text: Text to classify
+        label_to_desc: Mapping from label to description
         use_label_desc: Whether to include label descriptions
-        rag_examples: Optional RAG examples, each with "text" and "prediction" (labels)
+        rag_examples: Optional RAG examples with "text" and "prediction" (labels)
+        dataset_desc: Optional dataset description for task context
 
     Returns:
         Prompt string
     """
-    # Format label list
+    # Format labels/label descriptions
     desc_lines = []
     for label, desc in label_to_desc.items():
         if use_label_desc:
-            # Collapse whitespace
+            # Collapse whitespace in descriptions
             short_desc = " ".join(desc.split())
             desc_lines.append(f"- {label}: {short_desc}")
         else:
-            # Use label name only
+            # Only use label names
             desc_lines.append(f"- {label}")
-    
+
     labels_str = "\n".join(desc_lines)
-    
-    # JSON output example
+
+    # Example JSON output
     example_output = {
-        "labels": list(label_to_desc.keys())[:3]  # Example: first 3 labels
+        "labels": list(label_to_desc.keys())[:3]  # Example: take first 3 labels
     }
-    
-    # Build RAG example section
+
+    # Dataset description section
+    dataset_desc_section = ""
+    if dataset_desc:
+        dataset_desc_section = f"""
+Task description:
+{dataset_desc}
+
+"""
+
+    # RAG examples section
     rag_section = ""
     if rag_examples and len(rag_examples) > 0:
         rag_examples_str = []
@@ -57,21 +68,20 @@ def build_llm_prompt(
             )
         rag_section = f"""
 
-Reference examples (previous high-confidence predictions):
+Reference examples (high-confidence predictions from earlier steps):
 {chr(10).join(rag_examples_str)}
 
 """
-    
-    prompt = f"""
-You are a multi-label classifier. Select all applicable labels from the list and output JSON:
 
+    prompt = f"""
+You are a multi-label classifier. Select all applicable labels from the list below and output JSON:
+{dataset_desc_section}
 {labels_str}
 {rag_section}
 Output requirements:
 1. Output JSON only, no extra text.
-2. JSON must include a "labels" field (string array).
-3. Select all labels you consider applicable.
-4. Do not output a "confidences" field.
+2. JSON must include the "labels" field (string array).
+3. Select all applicable labels, up to 5 total.
 
 Example output:
 {json.dumps(example_output, ensure_ascii=False, indent=2)}

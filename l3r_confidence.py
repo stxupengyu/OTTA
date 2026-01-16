@@ -118,6 +118,33 @@ def compute_l3r_per_label(
     return label_scores
 
 
+def compute_naive_per_label(
+    predicted_labels: Sequence[str],
+    token_logprobs: Sequence[Dict],
+    content: str,
+) -> Dict[str, float]:
+    """
+    Compute a naive per-label confidence based on average token probability.
+    """
+    label_scores: Dict[str, float] = {}
+    if not token_logprobs or not predicted_labels:
+        return label_scores
+
+    token_positions = _build_token_positions(token_logprobs)
+    for label in predicted_labels:
+        steps = _find_label_token_steps(label, content, token_positions)
+        if not steps:
+            label_scores[label] = 0.0
+            continue
+        probs: List[float] = []
+        for step_idx, token in steps:
+            step = token_logprobs[step_idx]
+            probs.append(_get_token_prob(step, token))
+        label_scores[label] = sum(probs) / len(probs) if probs else 0.0
+
+    return label_scores
+
+
 def _build_token_vocab(token_logprobs: Sequence[Dict]) -> List[str]:
     vocab = set()
     for step in token_logprobs:
